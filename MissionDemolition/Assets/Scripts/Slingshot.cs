@@ -7,6 +7,8 @@ public class Slingshot : MonoBehaviour
     public GameObject launchPoint;
     public GameObject projectilePrefab;
     public float velocityMult = 10f;
+    public GameObject projLinePrefab;
+    public int shotsTaken;
     
     // Camera follow settings
     [Header("Camera Follow Settings")]
@@ -31,6 +33,7 @@ public class Slingshot : MonoBehaviour
     public GameObject projectile;
     public bool aimingMode;
     private Vector3 originalCameraPosition;
+    private GameObject projectileLine;
     
     // Start is called before the first frame update
     void Awake()
@@ -90,10 +93,10 @@ public class Slingshot : MonoBehaviour
             rb.isKinematic = true;
         }
         
-        // Start following the projectile immediately when aiming starts
         followProjectile = true;
         cameraToggleMode = false; // Switch to ball follow mode
         Debug.Log("Aiming started - camera now following ball");
+
     }
 
     void OnMouseDrag()
@@ -132,9 +135,30 @@ public class Slingshot : MonoBehaviour
             Vector3 velocity = (launchPos - projectilePos) * velocityMult;
             rb.velocity = velocity;
             
+            // Create projectile line when projectile is fired
+            if (projLinePrefab != null)
+            {
+                projectileLine = Instantiate(projLinePrefab) as GameObject;
+                projectileLine.transform.position = projectile.transform.position; // Start at projectile position
+                
+                // Set up the line to follow the projectile
+                ProjectileLine lineScript = projectileLine.GetComponent<ProjectileLine>();
+                if (lineScript != null)
+                {
+                    lineScript.SetProjectile(projectile); // Tell the line which projectile to follow
+                    Debug.Log("Projectile line created and following projectile");
+                }
+            }
+            else
+            {
+                Debug.LogWarning("ProjLinePrefab is not assigned - no line will be drawn");
+            }
+            
             // Camera is already following from OnMouseDown, just ensure it stays in ball follow mode
             cameraToggleMode = false; // Ensure we stay in ball follow mode
             Debug.Log("Shot fired - camera continues following ball");
+
+            MissionDemolition.S.ShotFired();
         }
     }
 
@@ -147,6 +171,9 @@ public class Slingshot : MonoBehaviour
             cameraToggleMode = !cameraToggleMode;
             Debug.Log($"Camera mode: {(cameraToggleMode ? "Slingshot View" : "Ball Follow")}");
         }
+        
+        // Camera follows ball until it's destroyed or user toggles camera mode
+        // No automatic stopping based on velocity
         
         // Camera follow logic
         if (followCamera != null)
@@ -179,9 +206,6 @@ public class Slingshot : MonoBehaviour
                 cameraTransitionSpeed * Time.deltaTime
             );
             
-            // Camera follows ball until it's destroyed or user toggles camera mode
-            // No automatic stopping based on velocity
-            
             // Check if projectile has fallen below threshold and destroy it
             if (projectile != null && projectile.transform.position.y < destroyYThreshold)
             {
@@ -189,8 +213,39 @@ public class Slingshot : MonoBehaviour
                 Destroy(projectile);
                 projectile = null;
                 followProjectile = false; // Stop following when ball is destroyed
+                
+                // Also destroy the projectile line
+                if (projectileLine != null)
+                {
+                    Destroy(projectileLine);
+                    projectileLine = null;
+                }
             }
         }
+    }
+    
+    // Check if the projectile is sleeping (not moving)
+    private bool IsProjectileSleeping()
+    {
+        if (projectile == null) return false;
+        
+        Rigidbody rb = projectile.GetComponent<Rigidbody>();
+        if (rb == null) return false;
+        
+        // Check if the rigidbody is sleeping
+        if (rb.IsSleeping())
+        {
+            return true;
+        }
+        
+        // Alternative check: if velocity is very low (for cases where IsSleeping() might not work as expected)
+        float velocityThreshold = 0.1f;
+        if (rb.velocity.magnitude < velocityThreshold && rb.angularVelocity.magnitude < velocityThreshold)
+        {
+            return true;
+        }
+        
+        return false;
     }
     
     // Public method to toggle camera (can be called from UI button)
